@@ -2,12 +2,10 @@ package com.coreoz.wisp;
 
 import static com.coreoz.wisp.Utils.doNothing;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.fail;
 
 import java.time.Duration;
-import java.util.Queue;
+import java.util.Optional;
 import java.util.concurrent.CompletionStage;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -17,63 +15,58 @@ import org.junit.Test;
 import com.coreoz.wisp.Utils.SingleJob;
 import com.coreoz.wisp.schedule.Schedules;
 
-import lombok.Value;
-
 /**
- * Tests about {@link Scheduler#cancel(String)} only
+ * Tests about {@link Scheduler#cancel(Integer)} only
  */
 public class SchedulerCancelTest {
 
 	@Test
-	public void cancel_should_throw_IllegalArgumentException_if_the_job_name_does_not_exist() {
+	public void cancel_should_return_empty_optional_if_the_job_does_not_exist() throws Exception {
 		Scheduler scheduler = new Scheduler(SchedulerConfig.builder().maxThreads(1).build());
-		try {
-			scheduler.cancel("job that does not exist");
-			fail("Should not accept to cancel a job that does not exist");
-		} catch (IllegalArgumentException e) {
-			// as expected :)
-		}
-		scheduler.gracefullyShutdown();
+		CompletionStage<Optional<Job>> cancelFuture = scheduler.cancel(-1);
+		
+		assertThat(cancelFuture.toCompletableFuture().get(1, TimeUnit.SECONDS).isPresent()).isFalse();
+		
+		scheduler.shutdown();
 	}
 
 	@Test
 	public void cancel_should_returned_a_job_with_the_done_status() throws Exception {
 		Scheduler scheduler = new Scheduler(SchedulerConfig.builder().maxThreads(1).build());
-		scheduler.schedule("doNothing", doNothing(), Schedules.fixedDelaySchedule(Duration.ofMillis(100)));
-		Job job = scheduler.cancel("doNothing").toCompletableFuture().get(1, TimeUnit.SECONDS);
+		Job job = scheduler.schedule("doNothing", doNothing(), Schedules.fixedDelaySchedule(Duration.ofMillis(100)));
+		Job cancelledJob = scheduler.cancel(job.id()).toCompletableFuture().get(1, TimeUnit.SECONDS).get();
 
-		assertThat(job).isNotNull();
-		assertThat(job.status()).isEqualTo(JobStatus.DONE);
-		assertThat(scheduler.jobStatus().size()).isEqualTo(1);
-		assertThat(job.name()).isEqualTo("doNothing");
-		assertThat(job.runnable()).isSameAs(doNothing());
+		assertThat(cancelledJob).isNotNull();
+		assertThat(cancelledJob.status()).isEqualTo(JobStatus.DONE);
+		assertThat(scheduler.jobStatus().size()).isEqualTo(0);
+		assertThat(cancelledJob.name()).isEqualTo("doNothing");
+		assertThat(cancelledJob.runnable()).isSameAs(doNothing());
 
-		scheduler.gracefullyShutdown();
+		scheduler.shutdown();
 
-		assertThat(job.executionsCount()).isEqualTo(0);
+		assertThat(cancelledJob.executionsCount()).isEqualTo(0);
 	}
 
 	@Test
-	public void second_cancel_should_return_either_the_first_promise_or_either_a_completed_future() throws Exception {
+	public void second_cancel_should_return_same_job_as_the_first_promise_and_a_completed_future() throws Exception {
 		Scheduler scheduler = new Scheduler(SchedulerConfig.builder().maxThreads(1).build());
-		scheduler.schedule("job", Utils.TASK_THAT_SLEEPS_FOR_200MS, Schedules.fixedDelaySchedule(Duration.ofMillis(1)));
+		Job job = scheduler.schedule("job", Utils.TASK_THAT_SLEEPS_FOR_200MS, Schedules.fixedDelaySchedule(Duration.ofMillis(1)));
 
 		// so the job can start executing
 		Thread.sleep(20L);
 
-		CompletionStage<Job> cancelFuture = scheduler.cancel("job");
-		CompletionStage<Job> otherCancelFuture = scheduler.cancel("job");
-		assertThat(cancelFuture).isSameAs(otherCancelFuture);
+		CompletionStage<Optional<Job>> cancelFuture = scheduler.cancel(job.id());
+		CompletionStage<Optional<Job>> otherCancelFuture = scheduler.cancel(job.id());
 
-		cancelFuture.toCompletableFuture().get(1, TimeUnit.SECONDS);
+		assertThat(cancelFuture.toCompletableFuture().get(1, TimeUnit.SECONDS).get())
+			.isSameAs(otherCancelFuture.toCompletableFuture().get(1, TimeUnit.SECONDS).get());
+		assertThat(cancelFuture.toCompletableFuture().isDone()).isTrue();
+		assertThat(otherCancelFuture.toCompletableFuture().isDone()).isTrue();
 
-		CompletionStage<Job> lastCancelFuture = scheduler.cancel("job");
-		assertThat(lastCancelFuture.toCompletableFuture().isDone()).isTrue();
-
-		scheduler.gracefullyShutdown();
+		scheduler.shutdown();
 	}
-
-	@Test
+	
+/*	@Test
 	public void cancelled_job_should_be_schedulable_again() throws Exception {
 		Scheduler scheduler = new Scheduler(SchedulerConfig.builder().maxThreads(1).build());
 		scheduler.schedule("doNothing", doNothing(), Schedules.fixedDelaySchedule(Duration.ofMillis(100)));
@@ -86,8 +79,8 @@ public class SchedulerCancelTest {
 		assertThat(job.name()).isEqualTo("doNothing");
 		assertThat(job.runnable()).isSameAs(doNothing());
 
-		scheduler.gracefullyShutdown();
-	}
+		scheduler.shutdown();
+	}*/
 
 	@Test
 	public void cancelling_a_job_should_wait_until_it_is_terminated_and_other_jobs_should_continue_running()
@@ -115,10 +108,10 @@ public class SchedulerCancelTest {
 		int job1ExecutionsCount = job1.executionsCount();
 		assertThat(job2.executionsCount()).isEqualTo(0);
 
-		scheduler.cancel(job2.name()).toCompletableFuture().get(1, TimeUnit.SECONDS);
+		scheduler.cancel(job2.id()).toCompletableFuture().get(1, TimeUnit.SECONDS);
 
 		Thread.sleep(30);
-		scheduler.gracefullyShutdown();
+		scheduler.shutdown();
 
 		assertThat(job2.executionsCount()).isEqualTo(1);
 		assertThat(jobProcess2.countExecuted.get()).isEqualTo(1);
@@ -150,10 +143,10 @@ public class SchedulerCancelTest {
 		assertThat(job1.status()).isEqualTo(JobStatus.READY);
 
 		long timeBeforeCancel = System.currentTimeMillis();
-		scheduler.cancel(job1.name()).toCompletableFuture().get(1, TimeUnit.SECONDS);
+		scheduler.cancel(job1.id()).toCompletableFuture().get(1, TimeUnit.SECONDS);
 		assertThat(timeBeforeCancel - System.currentTimeMillis()).isLessThan(50L);
 
-		scheduler.gracefullyShutdown();
+		scheduler.shutdown();
 	}
 
 	@Test
@@ -165,7 +158,7 @@ public class SchedulerCancelTest {
 	}
 
 
-	@Test
+/*	@Test
 	public void scheduling_a_done_job_should_keep_its_previous_stats() throws InterruptedException, ExecutionException, TimeoutException {
 		Scheduler scheduler = new Scheduler();
 
@@ -174,7 +167,7 @@ public class SchedulerCancelTest {
 
 		scheduler.cancel("job").toCompletableFuture().get(1, TimeUnit.SECONDS);
 		Job newJob = scheduler.schedule("job", doNothing(), Schedules.fixedDelaySchedule(Duration.ofMillis(1)));
-		scheduler.gracefullyShutdown();
+		scheduler.shutdown();
 
 		assertThat(newJob.executionsCount()).isGreaterThanOrEqualTo(job.executionsCount());
 		assertThat(newJob.lastExecutionEndedTimeInMillis()).isNotNull();
@@ -196,7 +189,7 @@ public class SchedulerCancelTest {
 			return currentTimeInMillis;
 		});
 		Thread.sleep(25L);
-		scheduler.gracefullyShutdown();
+		scheduler.shutdown();
 
 		for(ScheduledExecution scheduledExecution : scheduledExecutions) {
 			assertThat(scheduledExecution.executionsCount).isGreaterThanOrEqualTo(beforeScheduledAgainCount);
@@ -211,5 +204,5 @@ public class SchedulerCancelTest {
 		private int executionsCount;
 		private Long lastExecutionEndedTimeInMillis;
 	}
-
+*/
 }

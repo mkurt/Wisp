@@ -16,12 +16,12 @@ public class SchedulerShutdownTest {
 		Scheduler scheduler = new Scheduler();
 		long beforeShutdown = System.currentTimeMillis();
 
-		scheduler.gracefullyShutdown();
+		scheduler.shutdown();
 
 		assertThat(System.currentTimeMillis() - beforeShutdown).isLessThan(20L);
 	}
 
-	@Test
+	/*@Test
 	public void second_shutdown_should_still_wait_for_its_timeout() throws InterruptedException {
 		Scheduler scheduler = new Scheduler();
 
@@ -30,17 +30,17 @@ public class SchedulerShutdownTest {
 		Thread.sleep(20L);
 
 		try {
-			scheduler.gracefullyShutdown(Duration.ofMillis(20)); // this will throw the exception
+			scheduler.shutdown(Duration.ofMillis(20)); // this will throw the exception
 			throw new InterruptedException(); // so the compiler is happy
 		} catch (InterruptedException e) {
 			// as excepted
 		}
 		long beforeSecondShutdown = System.currentTimeMillis();
-		scheduler.gracefullyShutdown();
+		scheduler.shutdown();
 
 		assertThat(System.currentTimeMillis() - beforeSecondShutdown).isGreaterThan(100L);
 	}
-
+*/
 	@Test
 	public void ready_job_should_finish_without_being_executed_during_shutdown() throws InterruptedException {
 		Scheduler scheduler = new Scheduler(SchedulerConfig.builder().maxThreads(1).build());
@@ -65,7 +65,7 @@ public class SchedulerShutdownTest {
 
 		assertThat(jobThatWillNotBeExecuted.status()).isEqualTo(JobStatus.READY);
 		long beforeShutdown = System.currentTimeMillis();
-		scheduler.gracefullyShutdown();
+		scheduler.shutdown();
 		assertThat(System.currentTimeMillis() - beforeShutdown).isLessThan(200L);
 		assertThat(jobThatWillNotBeExecuted.executionsCount()).isZero();
 	}

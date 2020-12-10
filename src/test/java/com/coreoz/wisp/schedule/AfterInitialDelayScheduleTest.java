@@ -6,6 +6,7 @@ import java.time.Duration;
 
 import org.junit.Test;
 
+import com.coreoz.wisp.Job;
 import com.coreoz.wisp.Scheduler;
 import com.coreoz.wisp.Utils;
 
@@ -31,12 +32,13 @@ public class AfterInitialDelayScheduleTest {
 	@Test
 	public void check_that_scheduler_really_rely_on_initial_delay() throws InterruptedException {
 		Scheduler scheduler = new Scheduler();
-		scheduler.schedule("job", Utils.doNothing(), Schedules.afterInitialDelay(Schedules.fixedDelaySchedule(Duration.ofDays(1)), Duration.ZERO));
-
+		Job job = scheduler.schedule("job", Utils.doNothing(), Schedules.afterInitialDelay(Schedules.fixedDelaySchedule(Duration.ofDays(1)), Duration.ZERO));
+		
 		Thread.sleep(100);
-		scheduler.gracefullyShutdown();
+		
+		assertThat(scheduler.findJob(job.id()).get().executionsCount()).isEqualTo(1);
 
-		assertThat(scheduler.findJob("job").get().executionsCount()).isEqualTo(1);
+		scheduler.shutdown();
 	}
 
 }

@@ -138,16 +138,9 @@ public class LongRunningJobMonitorTest {
 	}
 
 	private Job newJob() {
-		return new Job(
-			JobStatus.RUNNING,
-			-1L,
-			0,
-			null,
-			null,
-			"job name",
-			null,
-			null
-		);
+		Job job = new Job(1, "job name", null, null);
+		job.nextExecutionTimeInMillis(-1L);
+		job.status(JobStatus.RUNNING);
+		return job;
 	}
-
 }

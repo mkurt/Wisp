@@ -4,6 +4,8 @@ import static com.coreoz.wisp.Utils.waitOn;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Duration;
+import java.util.List;
+import java.util.ArrayList;
 
 import org.junit.Test;
 
@@ -22,13 +24,13 @@ public class SchedulerThreadPoolTest {
 				.build()
 		);
 
-		runTwoConcurrentJobsForAtLeastFiftyIterations(scheduler);
-		scheduler.cancel("job1");
-		scheduler.cancel("job2");
+		List<Job> jobs = runTwoConcurrentJobsForAtLeastFiftyIterations(scheduler);
+		scheduler.cancel(jobs.get(0).id());
+		scheduler.cancel(jobs.get(1).id());
 
 		Thread.sleep(60L);
 		SchedulerStats stats = scheduler.stats();
-		scheduler.gracefullyShutdown();
+		scheduler.shutdown();
 
 		assertThat(
 			stats.getThreadPoolStats().getActiveThreads()
@@ -53,7 +55,7 @@ public class SchedulerThreadPoolTest {
 		runTwoConcurrentJobsForAtLeastFiftyIterations(scheduler);
 
 		SchedulerStats stats = scheduler.stats();
-		scheduler.gracefullyShutdown();
+		scheduler.shutdown();
 
 		assertThat(
 			stats.getThreadPoolStats().getActiveThreads()
@@ -82,7 +84,7 @@ public class SchedulerThreadPoolTest {
 		Thread.sleep(30L);
 
 		SchedulerStats stats = scheduler.stats();
-		scheduler.gracefullyShutdown();
+		scheduler.shutdown();
 
 		assertThat(stats.getThreadPoolStats().getActiveThreads()).isEqualTo(1);
 		assertThat(stats.getThreadPoolStats().getIdleThreads()).isEqualTo(0);
@@ -91,14 +93,17 @@ public class SchedulerThreadPoolTest {
 		assertThat(stats.getThreadPoolStats().getLargestPoolSize()).isEqualTo(1);
 	}
 
-	private void runTwoConcurrentJobsForAtLeastFiftyIterations(Scheduler scheduler)
+	private List<Job> runTwoConcurrentJobsForAtLeastFiftyIterations(Scheduler scheduler)
 			throws InterruptedException {
 		SingleJob job1 = new SingleJob();
 		SingleJob job2 = new SingleJob();
 
-		scheduler.schedule("job1", job1, Schedules.fixedDelaySchedule(Duration.ofMillis(1)));
-		scheduler.schedule("job2", job2, Schedules.fixedDelaySchedule(Duration.ofMillis(1)));
-
+		List<Job> jobs = new ArrayList<>();
+		Job firstJob = scheduler.schedule("job1", job1, Schedules.fixedDelaySchedule(Duration.ofMillis(1)));
+		Job secondJob = scheduler.schedule("job2", job2, Schedules.fixedDelaySchedule(Duration.ofMillis(1)));
+		jobs.add(firstJob);
+		jobs.add(secondJob);
+		
 		Thread thread1 = new Thread(() -> {
 			waitOn(job1, () -> job1.countExecuted.get() > 50, 100);
 		});
@@ -109,6 +114,7 @@ public class SchedulerThreadPoolTest {
 		});
 		thread2.start();
 		thread2.join();
+		
+		return jobs;
 	}
-
 }

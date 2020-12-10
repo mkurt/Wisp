@@ -2,7 +2,6 @@ package com.coreoz.wisp;
 
 import static com.coreoz.wisp.Utils.waitOn;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.fail;
 
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -22,18 +21,13 @@ public class SchedulerTest {
 	private static final Logger logger = LoggerFactory.getLogger(SchedulerTest.class);
 
 	@Test
-	public void check_that_two_job_cannot_be_scheduled_with_the_same_name() {
+	public void check_that_two_job_can_be_scheduled_with_the_same_name() {
 		Scheduler scheduler = new Scheduler();
 
 		scheduler.schedule("job", Utils.doNothing(), Schedules.fixedDelaySchedule(Duration.ofMillis(1)));
-		try {
-			scheduler.schedule("job", Utils.doNothing(), Schedules.fixedDelaySchedule(Duration.ofMillis(1)));
-			fail();
-		} catch (IllegalArgumentException e) {
-			// as expected
-		}
+		scheduler.schedule("job", Utils.doNothing(), Schedules.fixedDelaySchedule(Duration.ofMillis(1)));
 
-		scheduler.gracefullyShutdown();
+		scheduler.shutdown();
 	}
 
 	@Test
@@ -48,7 +42,7 @@ public class SchedulerTest {
 
 		waitOn(singleJob, () -> singleJob.countExecuted.get() > 0, 10000);
 
-		scheduler.gracefullyShutdown();
+		scheduler.shutdown();
 
 		assertThat(singleJob.countExecuted.get()).isEqualTo(1);
 	}
@@ -104,7 +98,7 @@ public class SchedulerTest {
 		thread3.join();
 
 		SchedulerStats stats = scheduler.stats();
-		scheduler.gracefullyShutdown();
+		scheduler.shutdown();
 
 		assertThat(job1.countExecuted.get()).isEqualTo(1);
 		assertThat(job2.countExecuted.get()).isEqualTo(1);
@@ -141,7 +135,7 @@ public class SchedulerTest {
 		});
 		thread1.start();
 		thread1.join();
-		scheduler.gracefullyShutdown();
+		scheduler.shutdown();
 
 		assertThat(job.lastExecutionEndedTimeInMillis() - beforeExecutionTime)
 			.isGreaterThanOrEqualTo(jobIntervalTime.toMillis());
@@ -162,7 +156,7 @@ public class SchedulerTest {
 		});
 		thread1.start();
 		thread1.join();
-		scheduler.gracefullyShutdown();
+		scheduler.shutdown();
 
 		assertThat(job1.countExecuted.get()).isEqualTo(0);
 	}
@@ -182,7 +176,7 @@ public class SchedulerTest {
 		scheduler.schedule("job2", () -> {}, Schedules.executeOnce(Schedules.fixedDelaySchedule(Duration.ofSeconds(20))));
 
 		long beforeShutdownTime = System.currentTimeMillis();
-		scheduler.gracefullyShutdown();
+		scheduler.shutdown();
 
 		assertThat(System.currentTimeMillis() - beforeShutdownTime).isLessThan(Duration.ofSeconds(5).toMillis());
 	}
@@ -230,7 +224,7 @@ public class SchedulerTest {
 		thread2.start();
 		thread2.join();
 
-		scheduler.gracefullyShutdown();
+		scheduler.shutdown();
 
 		assertThat(isJob1ExecutedAfterJob2.get()).isTrue();
 	}
@@ -249,7 +243,7 @@ public class SchedulerTest {
 			)
 		);
 		Thread.sleep(150L);
-		scheduler.gracefullyShutdown();
+		scheduler.shutdown();
 
 		assertThat(job.executionsCount()).isGreaterThan(1);
 	}
@@ -262,7 +256,7 @@ public class SchedulerTest {
 
 		assertThat(job.status()).isEqualTo(JobStatus.SCHEDULED);
 
-		scheduler.gracefullyShutdown();
+		scheduler.shutdown();
 		assertThat(job.status()).isEqualTo(JobStatus.DONE);
 	}
 
@@ -273,7 +267,7 @@ public class SchedulerTest {
 		Job job = scheduler.schedule(Utils.TASK_THAT_SLEEPS_FOR_200MS, Schedules.fixedDelaySchedule(Duration.ofMillis(1)));
 		Thread.sleep(40L);
 		assertThat(job.status()).isEqualTo(JobStatus.RUNNING);
-		scheduler.gracefullyShutdown();
+		scheduler.shutdown();
 		assertThat(job.status()).isEqualTo(JobStatus.DONE);
 	}
 
@@ -286,7 +280,7 @@ public class SchedulerTest {
 		scheduler.schedule(Utils.TASK_THAT_SLEEPS_FOR_200MS, Schedules.fixedDelaySchedule(Duration.ofMillis(1)));
 		long countBeforeSleep = job.executionsCount();
 		Thread.sleep(50L);
-		scheduler.gracefullyShutdown();
+		scheduler.shutdown();
 
 		assertThat(job.executionsCount() - countBeforeSleep).isGreaterThan(3);
 	}
@@ -303,12 +297,26 @@ public class SchedulerTest {
 		assertThat(job.lastExecutionStartedTimeInMillis()).isCloseTo(System.currentTimeMillis(), Offset.offset(200L));
 		assertThat(job.threadRunningJob()).isNotNull();
 
-		scheduler.gracefullyShutdown();
+		scheduler.shutdown();
 
 		assertThat(job.executionsCount()).isOne();
 		assertThat(job.lastExecutionEndedTimeInMillis()).isNotNull();
 		assertThat(job.lastExecutionStartedTimeInMillis()).isNotNull();
 		assertThat(job.threadRunningJob()).isNull();
+	}
+	
+	@Test
+	public void check_that_a_job_can_remove_itself_when_done() throws InterruptedException {
+		Scheduler scheduler = new Scheduler();
+		
+		Job job = scheduler.schedule("job", Utils.TASK_THAT_SLEEPS_FOR_200MS, 
+				Schedules.executeOnce(Schedules.fixedDelaySchedule(Duration.ofMillis(1L))), true);
+		
+		Thread.sleep(300L);
+		assertThat(job.status()).isEqualTo(JobStatus.DONE);
+		assertThat(scheduler.jobStatus().size()).isZero();
+		
+		scheduler.shutdown();
 	}
 
 }
