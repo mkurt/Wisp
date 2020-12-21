@@ -237,7 +237,9 @@ public final class Scheduler {
 	 */
 	public void rescheduleAll() {
 		synchronized (this) {
-			for (Job job : jobs.values()) {
+			logger.info("Rescheduling all current jobs possibly because of a time shift occurence");
+			Collection<Job> currentJobs = new ArrayList<>(jobs.values());
+			for (Job job : currentJobs) {
 				Job duplicateJob = new Job(job.id(), job.name(), job.runnable(), job.schedule(), job.removeWhenDone());
 				cancelImpl(job).thenAccept(cancelledJob -> {
 					synchronized (this) {
